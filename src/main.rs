@@ -1,7 +1,6 @@
 use dialoguer::Confirm;
 use dialoguer::Input;
 use dialoguer::Select;
-use std::io;
 
 #[derive(PartialEq)]
 enum Confirmation {
@@ -41,11 +40,17 @@ fn get_input(prompt: &str, units: Unit) -> String {
         Unit::Kg => "[kg]/lb",
         Unit::Lb => "kg/[lb]",
     };
-    println!("{} (or select {}):", prompt, choices);
 
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    input.trim().to_string()
+    let prompt2 = format!("{} (or select {})", prompt, choices);
+    Input::<String>::new()
+        .with_prompt(prompt2)
+        .interact_text()
+        .unwrap()
+        .to_string()
+
+    //    let mut input = String::new();
+    //    io::stdin().read_line(&mut input).unwrap();
+    //   input.trim().to_string()
 }
 
 fn request_weight(prompt: &str, confirm: Confirmation) -> f32 {
