@@ -96,7 +96,7 @@ fn request_weight(prompt: &str, confirm: Confirmation) -> f32 {
     }
 }
 
-fn new_guess(results: &Vec<Player>) -> Player {
+fn new_guess(results: &[Player]) -> Player {
     let name = loop {
         let name: String = Input::new()
             .with_prompt("Your name?")
@@ -127,7 +127,7 @@ fn main() {
     let mut results: Vec<Player> = Vec::new();
     const MENU: [&str; 2] = ["Next Player", "End game"];
     loop {
-        let selection = Select::new().items(&MENU).default(0).interact().unwrap();
+        let selection = Select::new().items(MENU).default(0).interact().unwrap();
 
         if MENU[selection] == "End game" {
             break;
