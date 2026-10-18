@@ -11,6 +11,11 @@ const LOGO_PANEL_MIN: f32 = 150.0;
 const LOGO_PANEL_MAX: f32 = 340.0;
 const LOGO_MARGIN: f32 = 14.0;
 
+/// Global UI scale. Tuned for the official 7" DSI panel (800x480), which at
+/// this factor gives roughly 667x400 points of layout space — enough for the
+/// tallest screen without scrolling. Raise it for a larger or denser display.
+const ZOOM: f32 = 1.2;
+
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 117, 24);
 const ERROR_RED: egui::Color32 = egui::Color32::from_rgb(255, 105, 105);
 
