@@ -6,10 +6,29 @@ const BTN_SMALL: [f32; 2] = [220.0, 40.0];
 const FIELD: [f32; 2] = [220.0, 36.0];
 const TOGGLE: [f32; 2] = [42.0, 24.0];
 const TOGGLE_GAP: f32 = 6.0;
-const LOGO_PANEL_WIDTH: f32 = 150.0;
+const LOGO_PANEL_FRACTION: f32 = 0.34;
+const LOGO_PANEL_MIN: f32 = 150.0;
+const LOGO_PANEL_MAX: f32 = 340.0;
+const LOGO_MARGIN: f32 = 14.0;
 
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 117, 24);
 const ERROR_RED: egui::Color32 = egui::Color32::from_rgb(255, 105, 105);
+
+/// Embedded at compile time rather than read at runtime: a kiosk that boots
+/// straight into the game has no sensible way to recover from a missing file.
+const CHEERS: &str = include_str!("../../assets/cheers.txt");
+
+/// At least this many players before anyone gets cheered — with one player
+/// there is no contest to lead.
+const CHEER_FROM: usize = 2;
+
+fn cheer_lines() -> Vec<&'static str> {
+    CHEERS
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect()
+}
 
 enum Screen {
     SetRealWeight,
@@ -26,6 +45,9 @@ struct App {
     game: Option<Game>,
     name_input: String,
     guess_input: String,
+    cheer: Option<String>,
+    last_cheer: Option<usize>,
+    rng: u64,
 }
 
 impl App {
@@ -38,7 +60,55 @@ impl App {
             game: None,
             name_input: String::new(),
             guess_input: String::new(),
+            cheer: None,
+            last_cheer: None,
+            rng: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos() as u64)
+                // xorshift is stuck at zero, so make sure the seed never is.
+                | 1,
         }
+    }
+
+    /// xorshift64*. A dependency-free generator is plenty for picking one of
+    /// fifty strings, and saves pulling `rand` onto the Pi's build.
+    fn next_random(&mut self, len: usize) -> usize {
+        let mut x = self.rng;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.rng = x;
+        (x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 33) as usize % len
+    }
+
+    /// Pick a new cheer for whoever is currently closest.
+    ///
+    /// Called once when a player is added, never per frame — rolling the dice
+    /// inside `ui()` would reshuffle the text sixty times a second.
+    fn refresh_cheer(&mut self) {
+        // Take a `char` out of the game so the borrow ends before the
+        // `&mut self` call to `next_random` below.
+        let leader = self.game.as_ref().and_then(|game| {
+            if game.players().len() < CHEER_FROM {
+                return None;
+            }
+            game.ranking().first().and_then(|p| p.name.chars().next())
+        });
+
+        let lines = cheer_lines();
+        let (Some(initial), false) = (leader, lines.is_empty()) else {
+            self.cheer = None;
+            return;
+        };
+
+        let mut index = self.next_random(lines.len());
+        if Some(index) == self.last_cheer && lines.len() > 1 {
+            index = (index + 1) % lines.len();
+        }
+        self.last_cheer = Some(index);
+
+        let name = format!("{}.", initial.to_uppercase());
+        self.cheer = Some(lines[index].replace("{}", &name));
     }
 
     /// kg / lb toggle. Allocating a fixed-width row is what lets the
@@ -84,7 +154,7 @@ impl App {
     }
 
     fn set_real_weight(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Pumpkin Weight");
+        ui.heading("Guess the Pumpkin Weight");
         ui.label("Enter the real weight to start.");
         ui.add_space(18.0);
 
@@ -118,6 +188,14 @@ impl App {
             1 => "1 player so far".to_string(),
             n => format!("{} players so far", n),
         });
+
+        if let Some(cheer) = &self.cheer {
+            ui.add_space(8.0);
+            ui.add(egui::Label::new(
+                egui::RichText::new(cheer).italics().color(ACCENT),
+            ));
+        }
+
         ui.add_space(26.0);
 
         if ui
@@ -162,6 +240,7 @@ impl App {
                                 self.name_input.clear();
                                 self.guess_input.clear();
                                 self.screen = Screen::Menu;
+                                self.refresh_cheer();
                             }
                             Err(e) => self.error = Some(e.to_string()),
                         }
@@ -242,6 +321,7 @@ impl App {
             self.name_input.clear();
             self.guess_input.clear();
             self.error = None;
+            self.cheer = None;
             self.screen = Screen::SetRealWeight;
         }
     }
@@ -249,17 +329,29 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Fixed logo column, drawn before the content so it claims its width
-        // first and every screen gets the same remaining area.
+        // Logo column, drawn before the content so it claims its width first
+        // and every screen gets the same remaining area. Sized as a fraction
+        // of the window rather than in fixed pixels, so it adapts to whatever
+        // resolution and zoom factor the display ends up using.
+        let panel_width =
+            (ui.available_width() * LOGO_PANEL_FRACTION).clamp(LOGO_PANEL_MIN, LOGO_PANEL_MAX);
+
         egui::Panel::left("logo_panel")
             .resizable(false)
-            .exact_size(LOGO_PANEL_WIDTH)
+            .exact_size(panel_width)
             .show(ui, |ui| {
+                // The logo is square, so one side length satisfies both caps,
+                // and knowing its height lets us centre it vertically.
+                let side = (panel_width - LOGO_MARGIN * 2.0)
+                    .min(ui.available_height() - LOGO_MARGIN * 2.0)
+                    .max(0.0);
+                let top = ((ui.available_height() - side) / 2.0).max(0.0);
+
                 ui.vertical_centered(|ui| {
-                    ui.add_space(14.0);
+                    ui.add_space(top);
                     ui.add(
                         egui::Image::new(egui::include_image!("../../assets/pumpkin_logo.png"))
-                            .max_width(LOGO_PANEL_WIDTH - 28.0)
+                            .fit_to_exact_size(egui::vec2(side, side))
                             .corner_radius(12.0),
                     );
                 });
@@ -300,7 +392,7 @@ fn main() -> eframe::Result {
             // Required before `include_image!` will render anything.
             egui_extras::install_image_loaders(ctx);
 
-            ctx.set_zoom_factor(2.0);
+            ctx.set_zoom_factor(ZOOM);
             ctx.set_theme(egui::ThemePreference::Dark);
 
             ctx.all_styles_mut(|style| {
