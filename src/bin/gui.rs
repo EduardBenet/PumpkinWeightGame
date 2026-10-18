@@ -6,7 +6,7 @@ const BTN_SMALL: [f32; 2] = [220.0, 40.0];
 const FIELD: [f32; 2] = [220.0, 36.0];
 const TOGGLE: [f32; 2] = [42.0, 24.0];
 const TOGGLE_GAP: f32 = 6.0;
-const LOGO_HEIGHT: f32 = 150.0;
+const LOGO_PANEL_WIDTH: f32 = 150.0;
 
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 117, 24);
 const ERROR_RED: egui::Color32 = egui::Color32::from_rgb(255, 105, 105);
@@ -84,13 +84,6 @@ impl App {
     }
 
     fn set_real_weight(&mut self, ui: &mut egui::Ui) {
-        ui.add(
-            egui::Image::new(egui::include_image!("../../assets/pumpkin_logo.png"))
-                .max_height(LOGO_HEIGHT)
-                .corner_radius(16.0),
-        );
-        ui.add_space(10.0);
-
         ui.heading("Pumpkin Weight");
         ui.label("Enter the real weight to start.");
         ui.add_space(18.0);
@@ -256,6 +249,22 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Fixed logo column, drawn before the content so it claims its width
+        // first and every screen gets the same remaining area.
+        egui::Panel::left("logo_panel")
+            .resizable(false)
+            .exact_size(LOGO_PANEL_WIDTH)
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(14.0);
+                    ui.add(
+                        egui::Image::new(egui::include_image!("../../assets/pumpkin_logo.png"))
+                            .max_width(LOGO_PANEL_WIDTH - 28.0)
+                            .corner_radius(12.0),
+                    );
+                });
+            });
+
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(26.0);
