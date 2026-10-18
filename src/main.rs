@@ -1,3 +1,5 @@
+use pumpkin_weight::{AddPlayerError, Game, Unit};
+
 use dialoguer::Confirm;
 use dialoguer::Input;
 use dialoguer::Select;
@@ -6,33 +8,6 @@ use dialoguer::Select;
 enum Confirmation {
     Ask,
     Skip,
-}
-
-struct Player {
-    name: String,
-    guess: f32,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum Unit {
-    Kg,
-    Lb,
-}
-
-impl Unit {
-    fn label(self) -> &'static str {
-        match self {
-            Unit::Kg => "kg",
-            Unit::Lb => "lb",
-        }
-    }
-
-    fn to_kg(self, weight: f32) -> f32 {
-        match self {
-            Unit::Kg => weight,
-            Unit::Lb => weight * 0.453592,
-        }
-    }
 }
 
 fn get_input(prompt: &str, units: Unit) -> String {
@@ -46,14 +21,11 @@ fn get_input(prompt: &str, units: Unit) -> String {
         .with_prompt(prompt2)
         .interact_text()
         .unwrap()
+        .trim()
         .to_string()
-
-    //    let mut input = String::new();
-    //    io::stdin().read_line(&mut input).unwrap();
-    //   input.trim().to_string()
 }
 
-fn request_weight(prompt: &str, confirm: Confirmation) -> f32 {
+fn request_weight(prompt: &str, confirm: Confirmation) -> (f32, Unit) {
     let mut units = Unit::Kg;
 
     loop {
@@ -71,21 +43,20 @@ fn request_weight(prompt: &str, confirm: Confirmation) -> f32 {
             _ => {}
         }
 
-        let weight = match input.parse::<f32>() {
+        let weight = match units.parse_to_kg(&input) {
             Ok(v) => v,
-            Err(_) => {
-                println!("'{}' is not a number", input);
+            Err(e) => {
+                println!("'{}': {}", input, e);
                 continue;
             }
         };
 
-        if weight <= 0.0 {
-            println!("This was invalid, a weight is positive");
-            continue;
-        }
-
         if confirm == Confirmation::Ask {
-            let prompt = format!("You entered {} {}, are you sure?", weight, units.label());
+            let prompt = format!(
+                "You entered {} {}, are you sure?",
+                units.from_kg(weight),
+                units.label()
+            );
             let sure = Confirm::new()
                 .with_prompt(prompt)
                 .default(true)
@@ -97,39 +68,43 @@ fn request_weight(prompt: &str, confirm: Confirmation) -> f32 {
             }
         }
 
-        break units.to_kg(weight);
+        break (weight, units);
     }
 }
 
-fn new_guess(results: &[Player]) -> Player {
+fn new_guess(game: &mut Game) -> Result<(), AddPlayerError> {
     let name = loop {
         let name: String = Input::new()
             .with_prompt("Your name?")
             .interact_text()
             .unwrap();
 
-        if results.iter().any(|p| p.name == name) {
-            println!("Name already exists..");
-            continue;
+        match game.check_name(&name) {
+            Ok(_) => break name,
+            Err(e) => {
+                println!("'{}': {}", name, e)
+            }
         }
-
-        break name;
     };
 
-    let weight = request_weight("How heavy is the pumpkin?", Confirmation::Skip);
+    let (guess_weight, _) = request_weight("How heavy is the pumpkin?", Confirmation::Skip);
 
-    Player {
-        name: name,
-        guess: weight,
-    }
+    game.add_player(&name, guess_weight)
 }
 
 fn main() {
-    let real_weight = request_weight("Enter the real weight of the pumpkin", Confirmation::Ask);
-    println!("Starting game with {} kg", real_weight);
+    let (real_weight, unit) =
+        request_weight("Enter the real weight of the pumpkin", Confirmation::Ask);
+    println!(
+        "Starting game with {} {}",
+        unit.from_kg(real_weight),
+        unit.label()
+    );
 
-    // Starting game
-    let mut results: Vec<Player> = Vec::new();
+    // Starting the game
+    let mut game =
+        Game::new(real_weight, unit).expect("request_weight only returns positive weights");
+
     const MENU: [&str; 2] = ["Next Player", "End game"];
     loop {
         let selection = Select::new().items(MENU).default(0).interact().unwrap();
@@ -138,29 +113,32 @@ fn main() {
             break;
         }
 
-        let entry = new_guess(&results);
-
-        results.push(entry);
+        if let Err(e) = new_guess(&mut game) {
+            println!("Could not add player: {}", e);
+        }
     }
 
-    if results.is_empty() {
-        println!("Nobody played :(");
-        return;
+    let ranking = game.ranking();
+    let winners = game.winner();
+
+    match winners.as_slice() {
+        [] => println!("Nobody played :("),
+        [winner] => println!("And the winner is {}!", winner.name),
+        tied => {
+            let names: Vec<&str> = tied.iter().map(|p| p.name.as_str()).collect();
+            println!("It's a tie between {}!", names.join(" and "))
+        }
     }
 
-    results.sort_by(|a, b| {
-        let da = (a.guess - real_weight).abs();
-        let db = (b.guess - real_weight).abs();
-        da.total_cmp(&db)
-    });
+    println!("Leader board:");
 
-    for p in &results {
+    for p in &ranking {
         println!(
-            "{} guessed {} kg - off by {:.2}",
+            "{} guessed {} {} - off by {:.2}",
             p.name,
-            p.guess,
-            (p.guess - real_weight).abs()
+            game.unit().from_kg(p.guess),
+            game.unit().label(),
+            game.unit().from_kg(p.error(game.real_weight()))
         );
     }
-    println!("And the winner is {}", results[0].name);
 }

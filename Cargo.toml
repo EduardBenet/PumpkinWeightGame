@@ -3,8 +3,11 @@ name = "pumpkin-weight"
 version = "0.1.0"
 edition = "2024"
 
+default-run = "gui"
+
 [dependencies]
 dialoguer = "0.12.0"
+eframe = "0.36.2"
 
 [lints.clippy]
 redundant_field_names = "allow"
