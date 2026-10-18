@@ -284,6 +284,9 @@ impl eframe::App for App {
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
+        // OpenGL ES rather than eframe's default wgpu: the Pi 4's V3D driver
+        // can't meet wgpu's default device limits and fails to start.
+        renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default().with_inner_size([900.0, 780.0]),
         ..Default::default()
     };
