@@ -1,5 +1,62 @@
 use eframe::egui;
 use pumpkin_weight::{Game, Unit};
+use std::path::PathBuf;
+
+/// Crash recovery. The game is written here after every change, so a power
+/// cut mid-session loses nothing, and read back at startup. Deleted when a
+/// game is finished — so a file existing means "we stopped unexpectedly".
+const RESUME_DIR: &str = ".local/share/pumpkin-weight";
+const RESUME_FILE: &str = "resume.txt";
+
+fn resume_path() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    home.join(RESUME_DIR).join(RESUME_FILE)
+}
+
+/// Best effort. A failed save must never interrupt play, so problems go to
+/// stderr — visible in the console or journal, invisible to the players.
+fn save_resume(game: &Game) {
+    let path = resume_path();
+
+    let written = match path.parent() {
+        Some(dir) => {
+            std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, game.to_save_string()))
+        }
+        None => std::fs::write(&path, game.to_save_string()),
+    };
+
+    if let Err(e) = written {
+        eprintln!("could not save {}: {e}", path.display());
+    }
+}
+
+/// A missing file is the normal case, not an error. A *damaged* file is
+/// reported and removed, so a corrupt save can't wedge the kiosk into
+/// failing at every startup.
+fn load_resume() -> Option<Game> {
+    let path = resume_path();
+    let text = std::fs::read_to_string(&path).ok()?;
+
+    match Game::from_save_string(&text) {
+        Ok(game) => Some(game),
+        Err(e) => {
+            eprintln!("discarding {}: {e}", path.display());
+            let _ = std::fs::remove_file(&path);
+            None
+        }
+    }
+}
+
+fn clear_resume() {
+    let path = resume_path();
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => eprintln!("could not remove {}: {e}", path.display()),
+    }
+}
 
 const BTN: [f32; 2] = [220.0, 56.0];
 const ACTION: [f32; 2] = [150.0, 46.0];
@@ -21,9 +78,11 @@ const ZOOM: f32 = 1.2;
 /// be hittable with a fingertip, not a stylus.
 const KEY: [f32; 2] = [38.0, 31.0];
 const KEY_GAP: f32 = 4.0;
-const NUMKEY: [f32; 2] = [60.0, 38.0];
+const NUMKEY: [f32; 2] = [60.0, 32.0];
 
-const BACKSPACE: &str = "\u{232b}";
+/// Plain ASCII on purpose. The obvious choice, U+232B ERASE TO THE LEFT, is
+/// not in any of the fonts egui bundles, so it renders as a tofu box.
+const BACKSPACE: &str = "Del";
 
 /// Longest a player name may get. Stops one child filling the leaderboard.
 const NAME_MAX: usize = 12;
@@ -52,13 +111,24 @@ struct App {
 }
 
 impl App {
+    /// Resumes an interrupted game if one was left behind, otherwise starts
+    /// at the first screen. Used both at launch and by "New game", so the
+    /// recovery path gets exercised the same way either way.
     fn new() -> Self {
+        let game = load_resume();
+        let unit = game.as_ref().map_or(Unit::Kg, |g| g.unit());
+        let screen = if game.is_some() {
+            Screen::Menu
+        } else {
+            Screen::SetRealWeight
+        };
+
         Self {
-            screen: Screen::SetRealWeight,
+            screen,
             weight_input: String::new(),
-            unit: Unit::Kg,
+            unit,
             error: None,
-            game: None,
+            game,
             name_input: String::new(),
             guess_input: String::new(),
         }
@@ -101,7 +171,7 @@ impl App {
     fn error_banner(&self, ui: &mut egui::Ui) {
         let text = self.error.as_deref().unwrap_or(" ");
         ui.add_sized(
-            [FIELD[0], 26.0],
+            [FIELD[0], 22.0],
             egui::Label::new(egui::RichText::new(text).color(ERROR_RED)),
         );
     }
@@ -126,8 +196,9 @@ impl App {
         if ui.add_sized(ACTION, egui::Button::new("Start")).clicked() {
             match self.unit.parse_to_kg(&self.weight_input) {
                 Ok(kg) => {
-                    self.game =
-                        Some(Game::new(kg, self.unit).expect("parse_to_kg guarantees positive"));
+                    let game = Game::new(kg, self.unit).expect("parse_to_kg guarantees positive");
+                    save_resume(&game);
+                    self.game = Some(game);
                     self.error = None;
                     self.screen = Screen::Menu;
                 }
@@ -155,6 +226,8 @@ impl App {
         }
 
         if ui.add_sized(BTN, egui::Button::new("End game")).clicked() {
+            // The game is over, so there is nothing left to recover.
+            clear_resume();
             self.error = None;
             self.screen = Screen::Results;
         }
@@ -220,6 +293,9 @@ impl App {
 
                     match added {
                         Some(Ok(())) => {
+                            if let Some(game) = &self.game {
+                                save_resume(game);
+                            }
                             self.name_input.clear();
                             self.guess_input.clear();
                             self.error = None;
@@ -302,12 +378,9 @@ impl App {
         ui.add_space(26.0);
 
         if ui.add_sized(BTN, egui::Button::new("New game")).clicked() {
-            self.game = None;
-            self.weight_input.clear();
-            self.name_input.clear();
-            self.guess_input.clear();
-            self.error = None;
-            self.screen = Screen::SetRealWeight;
+            // Same path as launching: if a resume file somehow survived, it
+            // is picked up here rather than silently discarded.
+            *self = App::new();
         }
     }
 }
@@ -389,7 +462,7 @@ fn letter_pad(ui: &mut egui::Ui, target: &mut String) {
 /// keypad as well as a form, and at 400 points of height the default 12pt
 /// gap between widgets is the difference between fitting and scrolling.
 fn compact(ui: &mut egui::Ui) {
-    ui.spacing_mut().item_spacing.y = 6.0;
+    ui.spacing_mut().item_spacing.y = 4.0;
 }
 
 /// Primary and secondary action side by side. Stacked, the pair costs about
@@ -500,7 +573,7 @@ impl eframe::App for App {
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(10.0);
+                ui.add_space(6.0);
 
                 match self.screen {
                     Screen::SetRealWeight => self.set_real_weight(ui),
@@ -510,7 +583,7 @@ impl eframe::App for App {
                     Screen::Results => self.results(ui),
                 }
 
-                ui.add_space(10.0);
+                ui.add_space(6.0);
             });
         });
     }

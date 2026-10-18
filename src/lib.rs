@@ -28,6 +28,15 @@ pub enum Unit {
 }
 
 impl Unit {
+    /// Inverse of [`Unit::label`], for reading a saved game back.
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label.trim() {
+            "kg" => Some(Unit::Kg),
+            "lb" => Some(Unit::Lb),
+            _ => None,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Unit::Kg => "kg",
@@ -101,6 +110,34 @@ impl fmt::Display for AddPlayerError {
     }
 }
 
+/// First line of a saved game. Bumping the number makes older files load as
+/// [`LoadError::UnknownVersion`] rather than being misread.
+const SAVE_HEADER: &str = "pumpkin-weight 1";
+
+/// Separates a guess from a name in a saved line. A tab, because the
+/// on-screen keyboard cannot produce one and so a name can never contain it.
+const SAVE_SEPARATOR: char = '\t';
+
+#[derive(Debug, PartialEq)]
+pub enum LoadError {
+    /// Missing or unrecognised header line.
+    UnknownVersion,
+    /// A line could not be understood, or the weight was absent.
+    Malformed,
+}
+
+impl std::error::Error for LoadError {}
+
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let msg = match self {
+            LoadError::UnknownVersion => "saved game is from a different version",
+            LoadError::Malformed => "saved game is damaged",
+        };
+        write!(f, "{}", msg)
+    }
+}
+
 #[derive(Debug)]
 pub struct Game {
     real_weight: f32, // always kg
@@ -159,6 +196,74 @@ impl Game {
         });
 
         Ok(())
+    }
+
+    /// Render the whole game as text, for a caller to persist however it
+    /// likes. Weights are kg, as they are everywhere inside `Game`.
+    pub fn to_save_string(&self) -> String {
+        let mut out = format!(
+            "{}\nweight {}\nunit {}\n",
+            SAVE_HEADER,
+            self.real_weight,
+            self.unit.label()
+        );
+
+        for player in &self.players {
+            out.push_str(&format!(
+                "player {}{}{}\n",
+                player.guess, SAVE_SEPARATOR, player.name
+            ));
+        }
+
+        out
+    }
+
+    /// Rebuild a game from [`Game::to_save_string`].
+    ///
+    /// Players go back in through `add_player`, so a file that has been
+    /// hand-edited into an invalid state (duplicate names, say) is rejected
+    /// rather than loaded into a `Game` that breaks its own guarantees.
+    pub fn from_save_string(text: &str) -> Result<Self, LoadError> {
+        let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
+
+        if lines.next() != Some(SAVE_HEADER) {
+            return Err(LoadError::UnknownVersion);
+        }
+
+        let mut weight: Option<f32> = None;
+        let mut unit = Unit::Kg;
+        let mut players: Vec<(String, f32)> = Vec::new();
+
+        for line in lines {
+            let (key, value) = line.split_once(' ').ok_or(LoadError::Malformed)?;
+
+            match key {
+                "weight" => {
+                    weight = Some(value.parse().map_err(|_| LoadError::Malformed)?);
+                }
+                "unit" => {
+                    unit = Unit::from_label(value).ok_or(LoadError::Malformed)?;
+                }
+                "player" => {
+                    let (guess, name) = value
+                        .split_once(SAVE_SEPARATOR)
+                        .ok_or(LoadError::Malformed)?;
+                    let guess: f32 = guess.parse().map_err(|_| LoadError::Malformed)?;
+                    players.push((name.to_string(), guess));
+                }
+                _ => return Err(LoadError::Malformed),
+            }
+        }
+
+        let weight = weight.ok_or(LoadError::Malformed)?;
+        let mut game = Game::new(weight, unit).map_err(|_| LoadError::Malformed)?;
+
+        for (name, guess) in players {
+            game.add_player(&name, guess)
+                .map_err(|_| LoadError::Malformed)?;
+        }
+
+        Ok(game)
     }
 
     pub fn ranking(&self) -> Vec<&Player> {
@@ -263,6 +368,65 @@ mod tests {
         let winners = game.winner();
         assert_eq!(winners.len(), 1);
         assert_eq!(winners[0].name, "Closer");
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let mut game = Game::new(9.5, Unit::Lb).unwrap();
+        game.add_player("Bob", 9.0).unwrap();
+        game.add_player("Ada Lovelace", 10.25).unwrap();
+
+        let restored = Game::from_save_string(&game.to_save_string()).unwrap();
+
+        assert_eq!(restored.real_weight(), 9.5);
+        assert_eq!(restored.unit(), Unit::Lb);
+        assert_eq!(restored.players().len(), 2);
+        assert_eq!(restored.players()[1].name, "Ada Lovelace");
+        assert_eq!(restored.players()[1].guess, 10.25);
+    }
+
+    #[test]
+    fn load_rejects_a_foreign_file() {
+        assert_eq!(
+            Game::from_save_string("hello\n").unwrap_err(),
+            LoadError::UnknownVersion
+        );
+        assert_eq!(
+            Game::from_save_string("").unwrap_err(),
+            LoadError::UnknownVersion
+        );
+    }
+
+    #[test]
+    fn load_rejects_damage() {
+        let good = {
+            let mut g = Game::new(9.5, Unit::Kg).unwrap();
+            g.add_player("Bob", 9.0).unwrap();
+            g.to_save_string()
+        };
+
+        // A truncated weight line.
+        let bad = good.replace("weight 9.5", "weight ");
+        assert_eq!(
+            Game::from_save_string(&bad).unwrap_err(),
+            LoadError::Malformed
+        );
+
+        // A duplicate name that `add_player` would never have allowed.
+        let bad = format!("{good}player 1\tBob\n");
+        assert_eq!(
+            Game::from_save_string(&bad).unwrap_err(),
+            LoadError::Malformed
+        );
+    }
+
+    #[test]
+    fn load_needs_a_weight() {
+        let text = format!("{}\nunit kg\n", super::SAVE_HEADER);
+        assert_eq!(
+            Game::from_save_string(&text).unwrap_err(),
+            LoadError::Malformed
+        );
     }
 
     #[test]
