@@ -1,5 +1,14 @@
 use std::fmt;
 
+/// Two guesses within this many kilograms of each other count as a tie.
+///
+/// Guesses are normalised to kg on the way in, and that conversion rounds:
+/// 19 lb and 21 lb are both exactly 1 lb from 20 lb, but in `f32` their
+/// errors differ by about 1e-6 kg. Comparing with `==` would hand the win
+/// to whichever one happened to round low. A gram is far below any
+/// difference a person could mean, and a thousand times the rounding noise.
+const TIE_TOLERANCE_KG: f32 = 0.001;
+
 #[derive(Debug)]
 pub struct Player {
     pub name: String,
@@ -119,6 +128,10 @@ impl Game {
         self.unit
     }
 
+    pub fn players(&self) -> &[Player] {
+        &self.players
+    }
+
     pub fn check_name(&self, name: &str) -> Result<(), AddPlayerError> {
         let name = name.trim();
 
@@ -173,7 +186,7 @@ impl Game {
 
         self.players
             .iter()
-            .filter(|p| p.error(real) == best)
+            .filter(|p| (p.error(real) - best).abs() <= TIE_TOLERANCE_KG)
             .collect()
     }
 }
@@ -222,6 +235,34 @@ mod tests {
         game.add_player("Bob2", 3.0).unwrap();
         let winner = game.winner();
         assert_eq!(winner.len(), 2)
+    }
+
+    /// Regression: 19 lb and 21 lb are both exactly 1 lb from 20 lb, but the
+    /// conversion to kg rounds, so their errors are ~1e-6 apart in `f32`.
+    /// Exact equality picked a single winner; the tolerance restores the tie.
+    #[test]
+    fn ties_survive_unit_conversion() {
+        let real = Unit::Lb.parse_to_kg("20").unwrap();
+        let low = Unit::Lb.parse_to_kg("19").unwrap();
+        let high = Unit::Lb.parse_to_kg("21").unwrap();
+
+        let mut game = Game::new(real, Unit::Lb).unwrap();
+        game.add_player("Low", low).unwrap();
+        game.add_player("High", high).unwrap();
+
+        assert_eq!(game.winner().len(), 2);
+    }
+
+    /// The tolerance must not swallow differences people actually mean.
+    #[test]
+    fn near_misses_are_not_ties() {
+        let mut game = Game::new(10.0, Unit::Kg).unwrap();
+        game.add_player("Close", 10.05).unwrap();
+        game.add_player("Closer", 10.0).unwrap();
+
+        let winners = game.winner();
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].name, "Closer");
     }
 
     #[test]
