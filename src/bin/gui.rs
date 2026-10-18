@@ -2,7 +2,8 @@ use eframe::egui;
 use pumpkin_weight::{Game, Unit};
 
 const BTN: [f32; 2] = [220.0, 56.0];
-const BTN_SMALL: [f32; 2] = [220.0, 40.0];
+const ACTION: [f32; 2] = [150.0, 46.0];
+const ACTION_GAP: f32 = 10.0;
 const FIELD: [f32; 2] = [220.0, 36.0];
 const TOGGLE: [f32; 2] = [42.0, 24.0];
 const TOGGLE_GAP: f32 = 6.0;
@@ -18,9 +19,9 @@ const ZOOM: f32 = 1.2;
 
 /// On-screen key size. The panel has no physical keyboard, so these have to
 /// be hittable with a fingertip, not a stylus.
-const KEY: [f32; 2] = [38.0, 34.0];
+const KEY: [f32; 2] = [38.0, 31.0];
 const KEY_GAP: f32 = 4.0;
-const NUMKEY: [f32; 2] = [60.0, 42.0];
+const NUMKEY: [f32; 2] = [60.0, 38.0];
 
 const BACKSPACE: &str = "\u{232b}";
 
@@ -106,9 +107,11 @@ impl App {
     }
 
     fn set_real_weight(&mut self, ui: &mut egui::Ui) {
+        compact(ui);
+
         ui.heading("Pumpkin Weight");
         ui.label("Enter the real weight to start.");
-        ui.add_space(12.0);
+        ui.add_space(6.0);
 
         self.unit_toggle(ui);
         ui.add_sized(
@@ -118,9 +121,9 @@ impl App {
         self.error_banner(ui);
 
         number_pad(ui, &mut self.weight_input);
-        ui.add_space(10.0);
+        ui.add_space(6.0);
 
-        if ui.add_sized(BTN, egui::Button::new("Start")).clicked() {
+        if ui.add_sized(ACTION, egui::Button::new("Start")).clicked() {
             match self.unit.parse_to_kg(&self.weight_input) {
                 Ok(kg) => {
                     self.game =
@@ -158,16 +161,19 @@ impl App {
     }
 
     fn enter_name(&mut self, ui: &mut egui::Ui) {
+        compact(ui);
+
         ui.heading("What's your name?");
-        ui.add_space(8.0);
 
         ui.add_sized(FIELD, egui::Label::new(reading(&self.name_input, "name")));
         self.error_banner(ui);
 
         letter_pad(ui, &mut self.name_input);
-        ui.add_space(10.0);
+        ui.add_space(6.0);
 
-        if ui.add_sized(BTN, egui::Button::new("Next")).clicked() {
+        let (next, cancel) = action_row(ui, "Next", "Cancel");
+
+        if next {
             // Check the name before asking for a guess, so a duplicate is
             // caught on the screen that can still fix it.
             let verdict = self
@@ -185,26 +191,26 @@ impl App {
             }
         }
 
-        if ui
-            .add_sized(BTN_SMALL, egui::Button::new("Cancel"))
-            .clicked()
-        {
+        if cancel {
             self.cancel_entry();
         }
     }
 
     fn enter_guess(&mut self, ui: &mut egui::Ui) {
+        compact(ui);
+
         ui.heading(format!("How heavy, {}?", self.name_input));
-        ui.add_space(8.0);
 
         self.unit_toggle(ui);
         ui.add_sized(FIELD, egui::Label::new(reading(&self.guess_input, "guess")));
         self.error_banner(ui);
 
         number_pad(ui, &mut self.guess_input);
-        ui.add_space(10.0);
+        ui.add_space(6.0);
 
-        if ui.add_sized(BTN, egui::Button::new("Add player")).clicked() {
+        let (add, back) = action_row(ui, "Add", "Back");
+
+        if add {
             match self.unit.parse_to_kg(&self.guess_input) {
                 Ok(kg) => {
                     let added = self
@@ -227,7 +233,7 @@ impl App {
             }
         }
 
-        if ui.add_sized(BTN_SMALL, egui::Button::new("Back")).clicked() {
+        if back {
             self.guess_input.clear();
             self.error = None;
             self.screen = Screen::EnterName;
@@ -379,6 +385,36 @@ fn letter_pad(ui: &mut egui::Ui, target: &mut String) {
     });
 }
 
+/// Tighten vertical rhythm for the data-entry screens. They have to fit a
+/// keypad as well as a form, and at 400 points of height the default 12pt
+/// gap between widgets is the difference between fitting and scrolling.
+fn compact(ui: &mut egui::Ui) {
+    ui.spacing_mut().item_spacing.y = 6.0;
+}
+
+/// Primary and secondary action side by side. Stacked, the pair costs about
+/// 110 points of height; in a row it costs 46.
+fn action_row(ui: &mut egui::Ui, primary: &str, secondary: &str) -> (bool, bool) {
+    let mut clicked = (false, false);
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(ACTION[0] * 2.0 + ACTION_GAP, ACTION[1]),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = ACTION_GAP;
+            // Secondary on the left, so the primary sits under the thumb.
+            clicked.1 = ui
+                .add(egui::Button::new(secondary).min_size(ACTION.into()))
+                .clicked();
+            clicked.0 = ui
+                .add(egui::Button::new(primary).min_size(ACTION.into()))
+                .clicked();
+        },
+    );
+
+    clicked
+}
+
 /// Shared chrome for both pads: a fixed-width block so the enclosing
 /// `vertical_centered` can centre it, with keys tight together and smaller
 /// text than the primary buttons.
@@ -464,7 +500,7 @@ impl eframe::App for App {
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(20.0);
+                ui.add_space(10.0);
 
                 match self.screen {
                     Screen::SetRealWeight => self.set_real_weight(ui),
@@ -474,7 +510,7 @@ impl eframe::App for App {
                     Screen::Results => self.results(ui),
                 }
 
-                ui.add_space(20.0);
+                ui.add_space(10.0);
             });
         });
     }
