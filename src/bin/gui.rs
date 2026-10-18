@@ -16,29 +16,27 @@ const LOGO_MARGIN: f32 = 14.0;
 /// tallest screen without scrolling. Raise it for a larger or denser display.
 const ZOOM: f32 = 1.2;
 
+/// On-screen key size. The panel has no physical keyboard, so these have to
+/// be hittable with a fingertip, not a stylus.
+const KEY: [f32; 2] = [38.0, 34.0];
+const KEY_GAP: f32 = 4.0;
+const NUMKEY: [f32; 2] = [60.0, 42.0];
+
+const BACKSPACE: &str = "\u{232b}";
+
+/// Longest a player name may get. Stops one child filling the leaderboard.
+const NAME_MAX: usize = 12;
+
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 117, 24);
 const ERROR_RED: egui::Color32 = egui::Color32::from_rgb(255, 105, 105);
 
-/// Embedded at compile time rather than read at runtime: a kiosk that boots
-/// straight into the game has no sensible way to recover from a missing file.
-const CHEERS: &str = include_str!("../../assets/cheers.txt");
-
-/// At least this many players before anyone gets cheered — with one player
-/// there is no contest to lead.
-const CHEER_FROM: usize = 2;
-
-fn cheer_lines() -> Vec<&'static str> {
-    CHEERS
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .collect()
-}
+const LETTER_ROWS: [&str; 3] = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 
 enum Screen {
     SetRealWeight,
     Menu,
-    EnterPlayer,
+    EnterName,
+    EnterGuess,
     Results,
 }
 
@@ -50,9 +48,6 @@ struct App {
     game: Option<Game>,
     name_input: String,
     guess_input: String,
-    cheer: Option<String>,
-    last_cheer: Option<usize>,
-    rng: u64,
 }
 
 impl App {
@@ -65,55 +60,7 @@ impl App {
             game: None,
             name_input: String::new(),
             guess_input: String::new(),
-            cheer: None,
-            last_cheer: None,
-            rng: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos() as u64)
-                // xorshift is stuck at zero, so make sure the seed never is.
-                | 1,
         }
-    }
-
-    /// xorshift64*. A dependency-free generator is plenty for picking one of
-    /// fifty strings, and saves pulling `rand` onto the Pi's build.
-    fn next_random(&mut self, len: usize) -> usize {
-        let mut x = self.rng;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.rng = x;
-        (x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 33) as usize % len
-    }
-
-    /// Pick a new cheer for whoever is currently closest.
-    ///
-    /// Called once when a player is added, never per frame — rolling the dice
-    /// inside `ui()` would reshuffle the text sixty times a second.
-    fn refresh_cheer(&mut self) {
-        // Take a `char` out of the game so the borrow ends before the
-        // `&mut self` call to `next_random` below.
-        let leader = self.game.as_ref().and_then(|game| {
-            if game.players().len() < CHEER_FROM {
-                return None;
-            }
-            game.ranking().first().and_then(|p| p.name.chars().next())
-        });
-
-        let lines = cheer_lines();
-        let (Some(initial), false) = (leader, lines.is_empty()) else {
-            self.cheer = None;
-            return;
-        };
-
-        let mut index = self.next_random(lines.len());
-        if Some(index) == self.last_cheer && lines.len() > 1 {
-            index = (index + 1) % lines.len();
-        }
-        self.last_cheer = Some(index);
-
-        let name = format!("{}.", initial.to_uppercase());
-        self.cheer = Some(lines[index].replace("{}", &name));
     }
 
     /// kg / lb toggle. Allocating a fixed-width row is what lets the
@@ -159,18 +106,19 @@ impl App {
     }
 
     fn set_real_weight(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Guess the Pumpkin Weight");
+        ui.heading("Pumpkin Weight");
         ui.label("Enter the real weight to start.");
-        ui.add_space(18.0);
+        ui.add_space(12.0);
 
         self.unit_toggle(ui);
-
         ui.add_sized(
             FIELD,
-            egui::TextEdit::singleline(&mut self.weight_input).hint_text("weight"),
+            egui::Label::new(reading(&self.weight_input, "weight")),
         );
-
         self.error_banner(ui);
+
+        number_pad(ui, &mut self.weight_input);
+        ui.add_space(10.0);
 
         if ui.add_sized(BTN, egui::Button::new("Start")).clicked() {
             match self.unit.parse_to_kg(&self.weight_input) {
@@ -193,14 +141,6 @@ impl App {
             1 => "1 player so far".to_string(),
             n => format!("{} players so far", n),
         });
-
-        if let Some(cheer) = &self.cheer {
-            ui.add_space(8.0);
-            ui.add(egui::Label::new(
-                egui::RichText::new(cheer).italics().color(ACCENT),
-            ));
-        }
-
         ui.add_space(26.0);
 
         if ui
@@ -208,7 +148,7 @@ impl App {
             .clicked()
         {
             self.error = None;
-            self.screen = Screen::EnterPlayer;
+            self.screen = Screen::EnterName;
         }
 
         if ui.add_sized(BTN, egui::Button::new("End game")).clicked() {
@@ -217,41 +157,31 @@ impl App {
         }
     }
 
-    fn enter_player(&mut self, ui: &mut egui::Ui) {
-        ui.heading("New player");
-        ui.add_space(18.0);
+    fn enter_name(&mut self, ui: &mut egui::Ui) {
+        ui.heading("What's your name?");
+        ui.add_space(8.0);
 
-        ui.add_sized(
-            FIELD,
-            egui::TextEdit::singleline(&mut self.name_input).hint_text("your name"),
-        );
-
-        self.unit_toggle(ui);
-
-        ui.add_sized(
-            FIELD,
-            egui::TextEdit::singleline(&mut self.guess_input).hint_text("your guess"),
-        );
-
+        ui.add_sized(FIELD, egui::Label::new(reading(&self.name_input, "name")));
         self.error_banner(ui);
 
-        if ui.add_sized(BTN, egui::Button::new("Add player")).clicked() {
-            match self.unit.parse_to_kg(&self.guess_input) {
-                Ok(kg) => {
-                    if let Some(game) = &mut self.game {
-                        match game.add_player(&self.name_input, kg) {
-                            Ok(()) => {
-                                self.error = None;
-                                self.name_input.clear();
-                                self.guess_input.clear();
-                                self.screen = Screen::Menu;
-                                self.refresh_cheer();
-                            }
-                            Err(e) => self.error = Some(e.to_string()),
-                        }
-                    }
+        letter_pad(ui, &mut self.name_input);
+        ui.add_space(10.0);
+
+        if ui.add_sized(BTN, egui::Button::new("Next")).clicked() {
+            // Check the name before asking for a guess, so a duplicate is
+            // caught on the screen that can still fix it.
+            let verdict = self
+                .game
+                .as_ref()
+                .map(|game| game.check_name(&self.name_input));
+
+            match verdict {
+                Some(Ok(())) => {
+                    self.error = None;
+                    self.screen = Screen::EnterGuess;
                 }
-                Err(e) => self.error = Some(e.to_string()),
+                Some(Err(e)) => self.error = Some(e.to_string()),
+                None => self.error = Some("no game in progress".to_string()),
             }
         }
 
@@ -259,11 +189,56 @@ impl App {
             .add_sized(BTN_SMALL, egui::Button::new("Cancel"))
             .clicked()
         {
-            self.name_input.clear();
+            self.cancel_entry();
+        }
+    }
+
+    fn enter_guess(&mut self, ui: &mut egui::Ui) {
+        ui.heading(format!("How heavy, {}?", self.name_input));
+        ui.add_space(8.0);
+
+        self.unit_toggle(ui);
+        ui.add_sized(FIELD, egui::Label::new(reading(&self.guess_input, "guess")));
+        self.error_banner(ui);
+
+        number_pad(ui, &mut self.guess_input);
+        ui.add_space(10.0);
+
+        if ui.add_sized(BTN, egui::Button::new("Add player")).clicked() {
+            match self.unit.parse_to_kg(&self.guess_input) {
+                Ok(kg) => {
+                    let added = self
+                        .game
+                        .as_mut()
+                        .map(|game| game.add_player(&self.name_input, kg));
+
+                    match added {
+                        Some(Ok(())) => {
+                            self.name_input.clear();
+                            self.guess_input.clear();
+                            self.error = None;
+                            self.screen = Screen::Menu;
+                        }
+                        Some(Err(e)) => self.error = Some(e.to_string()),
+                        None => self.error = Some("no game in progress".to_string()),
+                    }
+                }
+                Err(e) => self.error = Some(e.to_string()),
+            }
+        }
+
+        if ui.add_sized(BTN_SMALL, egui::Button::new("Back")).clicked() {
             self.guess_input.clear();
             self.error = None;
-            self.screen = Screen::Menu;
+            self.screen = Screen::EnterName;
         }
+    }
+
+    fn cancel_entry(&mut self) {
+        self.name_input.clear();
+        self.guess_input.clear();
+        self.error = None;
+        self.screen = Screen::Menu;
     }
 
     fn results(&mut self, ui: &mut egui::Ui) {
@@ -326,14 +301,130 @@ impl App {
             self.name_input.clear();
             self.guess_input.clear();
             self.error = None;
-            self.cheer = None;
             self.screen = Screen::SetRealWeight;
         }
     }
 }
 
+/// What a text field would show: the typed value, or greyed placeholder text
+/// while it is empty. These are `Label`s rather than `TextEdit`s because the
+/// on-screen pads are the only way in — a focusable field on a kiosk just
+/// invites a caret nobody can move.
+fn reading(value: &str, placeholder: &str) -> egui::RichText {
+    if value.is_empty() {
+        egui::RichText::new(placeholder).weak()
+    } else {
+        egui::RichText::new(value).size(24.0).strong()
+    }
+}
+
+/// Digits, a decimal point and backspace.
+fn number_pad(ui: &mut egui::Ui, target: &mut String) {
+    let rows = [
+        ["1", "2", "3"],
+        ["4", "5", "6"],
+        ["7", "8", "9"],
+        [".", "0", BACKSPACE],
+    ];
+    let width = NUMKEY[0] * 3.0 + KEY_GAP * 2.0;
+
+    pad(ui, width, |ui| {
+        for row in rows {
+            ui.horizontal(|ui| {
+                for label in row {
+                    if ui
+                        .add(egui::Button::new(label).min_size(NUMKEY.into()))
+                        .clicked()
+                    {
+                        press(target, label, usize::MAX);
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// A-Z plus backspace, laid out as a compact qwerty.
+fn letter_pad(ui: &mut egui::Ui, target: &mut String) {
+    let longest = LETTER_ROWS
+        .iter()
+        .map(|r| r.chars().count())
+        .max()
+        .unwrap_or(1);
+    let width = KEY[0] * longest as f32 + KEY_GAP * (longest as f32 - 1.0);
+
+    pad(ui, width, |ui| {
+        for (index, row) in LETTER_ROWS.iter().enumerate() {
+            ui.horizontal(|ui| {
+                for letter in row.chars() {
+                    let label = letter.to_uppercase().to_string();
+                    if ui
+                        .add(egui::Button::new(label).min_size(KEY.into()))
+                        .clicked()
+                    {
+                        press(target, &letter.to_string(), NAME_MAX);
+                    }
+                }
+
+                // Backspace rides on the shortest row so the block stays tidy.
+                if index == LETTER_ROWS.len() - 1
+                    && ui
+                        .add(egui::Button::new(BACKSPACE).min_size(KEY.into()))
+                        .clicked()
+                {
+                    target.pop();
+                }
+            });
+        }
+    });
+}
+
+/// Shared chrome for both pads: a fixed-width block so the enclosing
+/// `vertical_centered` can centre it, with keys tight together and smaller
+/// text than the primary buttons.
+fn pad(ui: &mut egui::Ui, width: f32, contents: impl FnOnce(&mut egui::Ui)) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, 0.0),
+        egui::Layout::top_down(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(KEY_GAP, KEY_GAP);
+            ui.spacing_mut().button_padding = egui::vec2(2.0, 2.0);
+            ui.style_mut().text_styles.insert(
+                egui::TextStyle::Button,
+                egui::FontId::new(18.0, egui::FontFamily::Proportional),
+            );
+            contents(ui);
+        },
+    );
+}
+
+/// Apply one keypress. Letters are capitalised at the start of a name and
+/// lowercased after it, so "BOB" and "bob" both come out as "Bob".
+fn press(target: &mut String, label: &str, max: usize) {
+    if label == BACKSPACE {
+        target.pop();
+        return;
+    }
+    if target.chars().count() >= max {
+        return;
+    }
+    match label.chars().next() {
+        Some(c) if c.is_alphabetic() && !target.is_empty() => {
+            target.extend(c.to_lowercase());
+        }
+        Some(c) => target.extend(c.to_uppercase()),
+        None => {}
+    }
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Escape quits. The panel has a USB keyboard attached, and without
+        // this the only way out of a fullscreen kiosk is killing the process.
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+
         // Logo column, drawn before the content so it claims its width first
         // and every screen gets the same remaining area. Sized as a fraction
         // of the window rather than in fixed pixels, so it adapts to whatever
@@ -345,12 +436,12 @@ impl eframe::App for App {
             .resizable(false)
             .exact_size(panel_width)
             .show(ui, |ui| {
+                let usable = ui.available_height() - LOGO_MARGIN * 2.0;
+
                 // The logo is square, so one side length satisfies both caps,
                 // and knowing its height lets us centre it vertically.
-                let side = (panel_width - LOGO_MARGIN * 2.0)
-                    .min(ui.available_height() - LOGO_MARGIN * 2.0)
-                    .max(0.0);
-                let top = ((ui.available_height() - side) / 2.0).max(0.0);
+                let side = (panel_width - LOGO_MARGIN * 2.0).min(usable).max(0.0);
+                let top = ((ui.available_height() - side) / 2.0 - LOGO_MARGIN).max(0.0);
 
                 ui.vertical_centered(|ui| {
                     ui.add_space(top);
@@ -359,21 +450,31 @@ impl eframe::App for App {
                             .fit_to_exact_size(egui::vec2(side, side))
                             .corner_radius(12.0),
                     );
+
+                    // Deliberately small and dim: reachable when you want it,
+                    // not an obvious target for a four-year-old.
+                    ui.add_space(8.0);
+                    let exit = egui::Button::new(egui::RichText::new("exit").size(12.0).weak())
+                        .frame(false);
+                    if ui.add(exit).clicked() {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
                 });
             });
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(26.0);
+                ui.add_space(20.0);
 
                 match self.screen {
                     Screen::SetRealWeight => self.set_real_weight(ui),
                     Screen::Menu => self.menu(ui),
-                    Screen::EnterPlayer => self.enter_player(ui),
+                    Screen::EnterName => self.enter_name(ui),
+                    Screen::EnterGuess => self.enter_guess(ui),
                     Screen::Results => self.results(ui),
                 }
 
-                ui.add_space(26.0);
+                ui.add_space(20.0);
             });
         });
     }
