@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0" stop-color="#5a2a8c"/>
+      <stop offset="0.6" stop-color="#2a1050"/>
+      <stop offset="1" stop-color="#120626"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffb347" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#ff6a00" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="fire" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff7a8"/>
+      <stop offset="0.5" stop-color="#ffd23f"/>
+      <stop offset="1" stop-color="#ff7b00"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="512" height="512" rx="96"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <!-- moon -->
+    <circle cx="410" cy="96" r="54" fill="#fff4c2"/>
+    <circle cx="390" cy="80" r="10" fill="#f0e0a0"/>
+    <circle cx="428" cy="116" r="7" fill="#f0e0a0"/>
+    <!-- bats -->
+    <g fill="#120626">
+      <path d="M392 96 q10 -16 22 -4 q4 -8 8 0 q12 -12 22 4 q-12 -4 -16 6 q-6 -6 -10 0 q-4 -6 -10 0 q-4 -10 -16 -6 Z"/>
+      <path d="M80 110 q8 -13 18 -3 q3 -6 6 0 q10 -10 18 3 q-10 -3 -13 5 q-5 -5 -8 0 q-3 -5 -8 0 q-3 -8 -13 -5 Z"/>
+      <path d="M140 60 q6 -10 14 -2 q2 -5 5 0 q8 -8 14 2 q-8 -2 -10 4 q-4 -4 -6 0 q-3 -4 -6 0 q-3 -6 -11 -4 Z"/>
+    </g>
+    <!-- stars -->
+    <g fill="#ffe680">
+      <circle cx="60" cy="200" r="3"/><circle cx="470" cy="220" r="4"/><circle cx="210" cy="50" r="3"/>
+      <path d="M300 40 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3 Z"/>
+      <path d="M52 300 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3 Z"/>
+    </g>
+    <!-- pumpkin glow -->
+    <circle cx="256" cy="250" r="210" fill="url(#glow)"/>
+  </g>
+
+  <!-- scale -->
+  <rect x="96" y="352" width="320" height="118" rx="38" fill="#3b3f5c" stroke="#0e0418" stroke-width="8"/>
+  <path d="M104 420 Q256 440 408 420 L408 432 Q408 462 378 462 L134 462 Q104 462 104 432 Z" fill="#2a2d45"/>
+  <rect x="116" y="334" width="280" height="30" rx="15" fill="#8a8fb0" stroke="#0e0418" stroke-width="8"/>
+  <circle cx="256" cy="410" r="38" fill="#fff4c2" stroke="#0e0418" stroke-width="7"/>
+  <g stroke="#0e0418" stroke-width="5" stroke-linecap="round">
+    <line x1="256" y1="380" x2="256" y2="388"/>
+    <line x1="226" y1="410" x2="234" y2="410"/>
+    <line x1="286" y1="410" x2="278" y2="410"/>
+  </g>
+  <line x1="256" y1="410" x2="278" y2="390" stroke="#ff2a2a" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="256" cy="410" r="7" fill="#ff2a2a" stroke="#0e0418" stroke-width="3"/>
+
+  <!-- pumpkin lobes (back to front) -->
+  <!-- outer silhouette: stroke all lobes, then cover inner strokes -->
+  <g id="lobes">
+    <ellipse cx="150" cy="248" rx="74" ry="86"/>
+    <ellipse cx="362" cy="248" rx="74" ry="86"/>
+    <ellipse cx="200" cy="242" rx="80" ry="98"/>
+    <ellipse cx="312" cy="242" rx="80" ry="98"/>
+    <ellipse cx="256" cy="238" rx="80" ry="104"/>
+  </g>
+  <use href="#lobes" fill="none" stroke="#0e0418" stroke-width="16"/>
+  <use href="#lobes" fill="#ff7f1f"/>
+  <!-- side shading -->
+  <path d="M84 230 Q80 300 140 330 Q110 290 112 232 Q114 190 140 166 Q90 180 84 230 Z" fill="#d9520b"/>
+  <path d="M428 230 Q432 300 372 330 Q402 290 400 232 Q398 190 372 166 Q422 180 428 230 Z" fill="#d9520b"/>
+  <!-- soft ribs -->
+  <g fill="none" stroke="#d45a10" stroke-width="5" stroke-linecap="round">
+    <path d="M196 148 Q166 240 196 334"/>
+    <path d="M316 148 Q346 240 316 334"/>
+    <path d="M140 172 Q116 248 140 324"/>
+    <path d="M372 172 Q396 248 372 324"/>
+  </g>
+  <!-- cel shadow along bottom -->
+  <path d="M150 310 Q256 372 362 310 Q330 338 256 344 Q182 338 150 310 Z" fill="#a83a05" opacity="0.8"/>
+  <!-- rim highlights -->
+  <path d="M206 160 Q226 146 246 146" fill="none" stroke="#ffd2a0" stroke-width="8" stroke-linecap="round"/>
+  <path d="M120 220 Q124 196 138 182" fill="none" stroke="#ffb070" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- stem -->
+  <path d="M238 146 Q232 112 246 92 Q256 84 270 90 L262 104 Q256 120 272 148 Z" fill="#4a6b2a" stroke="#0e0418" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M262 104 Q284 92 300 104" fill="none" stroke="#0e0418" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- angry brows (carved) -->
+  <g fill="#0e0418">
+    <path d="M150 192 L236 216 L232 228 L148 206 Z"/>
+    <path d="M362 192 L276 216 L280 228 L364 206 Z"/>
+  </g>
+
+  <!-- carved glowing eyes -->
+  <g stroke="#0e0418" stroke-width="7" stroke-linejoin="round">
+    <path d="M160 222 L234 240 Q226 282 194 282 Q164 278 160 222 Z" fill="url(#fire)"/>
+    <path d="M352 222 L278 240 Q286 282 318 282 Q348 278 352 222 Z" fill="url(#fire)"/>
+  </g>
+  <!-- slit pupils + anime shine -->
+  <g fill="#0e0418">
+    <ellipse cx="202" cy="256" rx="6" ry="18"/>
+    <ellipse cx="310" cy="256" rx="6" ry="18"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="186" cy="244" r="6"/><circle cx="294" cy="244" r="6"/>
+    <circle cx="214" cy="270" r="3"/><circle cx="322" cy="270" r="3"/>
+  </g>
+
+  <!-- jagged fanged grin -->
+  <path d="M166 290 Q256 312 346 290 Q338 336 256 342 Q174 336 166 290 Z"
+        fill="url(#fire)" stroke="#0e0418" stroke-width="7" stroke-linejoin="round"/>
+  <g fill="#ff7f1f" stroke="#0e0418" stroke-width="5" stroke-linejoin="round">
+    <!-- top fangs -->
+    <path d="M196 297 L210 326 L224 301 Z"/>
+    <path d="M288 301 L302 326 L316 297 Z"/>
+    <path d="M244 304 L256 318 L268 304 Z"/>
+    <!-- bottom teeth -->
+    <path d="M226 338 L238 318 L250 341 Z"/>
+    <path d="M262 341 L274 318 L286 338 Z"/>
+  </g>
+
+</svg>
