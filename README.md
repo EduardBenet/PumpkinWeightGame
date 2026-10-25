@@ -156,9 +156,3 @@ All in `src/bin/gui.rs`:
 
 `ZOOM` first — it scales everything at once, and the rest are proportions
 within whatever it gives you.
-
----
-
-## Licence
-
-[MIT](LICENSE.txt). Do what you like with it; keep the copyright notice.

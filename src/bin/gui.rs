@@ -640,7 +640,17 @@ fn main() -> eframe::Result {
         // OpenGL ES rather than eframe's default wgpu: the Pi 4's V3D driver
         // can't meet wgpu's default device limits and fails to start.
         renderer: eframe::Renderer::Glow,
-        viewport: egui::ViewportBuilder::default().with_inner_size([900.0, 780.0]),
+
+        // No size request: under a kiosk compositor the window should take
+        // the whole output, and asking for a specific size left it 8px
+        // narrow and 32px short of the panel, with the compositor's black
+        // background showing through at the right and bottom.
+        //
+        // `with_decorations(false)` rules out client-side decorations
+        // reserving that space, and is what a kiosk wants regardless.
+        viewport: egui::ViewportBuilder::default()
+            .with_decorations(false)
+            .with_maximized(true),
         ..Default::default()
     };
 
