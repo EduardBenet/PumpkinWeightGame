@@ -1,5 +1,7 @@
 # Pumpkin Weight
 
+[![CI](https://github.com/EduardBenet/PumpkinWeightGame/actions/workflows/ci.yml/badge.svg)](https://github.com/EduardBenet/PumpkinWeightGame/actions/workflows/ci.yml)
+
 <img src="assets/pumpkin_logo.png" alt="" width="120" align="right">
 
 A guess-the-weight game for a Raspberry Pi with a touchscreen. The host
