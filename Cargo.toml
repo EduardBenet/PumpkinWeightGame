@@ -15,7 +15,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 [lints.clippy]
 redundant_field_names = "allow"
 
-[profile.release]
+#[profile.release]
 # Drop the symbol table: a much smaller binary and a faster link, which
 # matters on a Pi. Comment out when you need names in a backtrace.
-strip = true
+#strip = true

@@ -108,6 +108,7 @@ struct App {
     game: Option<Game>,
     name_input: String,
     guess_input: String,
+    last_geometry: Option<egui::Rect>,
 }
 
 impl App {
@@ -131,7 +132,38 @@ impl App {
             game,
             name_input: String::new(),
             guess_input: String::new(),
+            last_geometry: None,
         }
+    }
+
+    /// Report the window geometry whenever it changes.
+    ///
+    /// Diagnostic for a kiosk you cannot attach a debugger to: if egui's
+    /// layout area is smaller than the real framebuffer, content bunches
+    /// into the top-left and the remainder never gets painted. Printing
+    /// both numbers says immediately whether that is what is happening.
+    fn log_geometry(&mut self, ctx: &egui::Context) {
+        let rect = ctx.viewport_rect();
+        if self.last_geometry == Some(rect) {
+            return;
+        }
+        self.last_geometry = Some(rect);
+
+        let native = ctx.native_pixels_per_point();
+        let inner = ctx.input(|i| i.viewport().inner_rect);
+
+        eprintln!(
+            "geometry: viewport={:.0}x{:.0} pts  ppp={:.3}  zoom={:.3}  \
+             native_ppp={:?}  framebuffer={:.0}x{:.0} px  winit_inner={:?}",
+            rect.width(),
+            rect.height(),
+            ctx.pixels_per_point(),
+            ctx.zoom_factor(),
+            native,
+            rect.width() * ctx.pixels_per_point(),
+            rect.height() * ctx.pixels_per_point(),
+            inner.map(|r| (r.width(), r.height())),
+        );
     }
 
     /// kg / lb toggle. Allocating a fixed-width row is what lets the
@@ -535,6 +567,8 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.log_geometry(ui.ctx());
+
         // Escape quits. The panel has a USB keyboard attached, and without
         // this the only way out of a fullscreen kiosk is killing the process.
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
