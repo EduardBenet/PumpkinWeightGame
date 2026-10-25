@@ -527,6 +527,13 @@ fn press(target: &mut String, label: &str, max: usize) {
 }
 
 impl eframe::App for App {
+    /// eframe's default is a near-black (12,12,12) while egui's dark panels
+    /// are gray(27), so anywhere a panel does not paint shows as a darker
+    /// band. Matching the two makes the window one flat colour.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.panel_fill.to_normalized_gamma_f32()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Escape quits. The panel has a USB keyboard attached, and without
         // this the only way out of a fullscreen kiosk is killing the process.
@@ -571,19 +578,24 @@ impl eframe::App for App {
                 });
             });
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(6.0);
+        // The root `Ui` eframe provides has no frame of its own, so without
+        // a central panel the content area is never painted and the window
+        // shows two different greys.
+        egui::CentralPanel::default().show(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(6.0);
 
-                match self.screen {
-                    Screen::SetRealWeight => self.set_real_weight(ui),
-                    Screen::Menu => self.menu(ui),
-                    Screen::EnterName => self.enter_name(ui),
-                    Screen::EnterGuess => self.enter_guess(ui),
-                    Screen::Results => self.results(ui),
-                }
+                    match self.screen {
+                        Screen::SetRealWeight => self.set_real_weight(ui),
+                        Screen::Menu => self.menu(ui),
+                        Screen::EnterName => self.enter_name(ui),
+                        Screen::EnterGuess => self.enter_guess(ui),
+                        Screen::Results => self.results(ui),
+                    }
 
-                ui.add_space(6.0);
+                    ui.add_space(6.0);
+                });
             });
         });
     }
