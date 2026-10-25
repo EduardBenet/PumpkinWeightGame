@@ -159,12 +159,4 @@ within whatever it gives you.
 
 ## Licence
 
-[PolyForm Noncommercial 1.0.0](LICENSE.txt) — free to use, copy and modify
-for any noncommercial purpose, including hobby, education and charity.
-Commercial use needs a separate arrangement.
-
-Note this is a *source available* licence rather than an open source one:
-the Open Source Definition does not permit restrictions on the field of
-use, so a noncommercial clause disqualifies a licence by definition. If you
-would rather the project be genuinely open source, MIT or Apache-2.0 are
-the usual choices — both allow commercial use.
+[MIT](LICENSE.txt). Do what you like with it; keep the copyright notice.
